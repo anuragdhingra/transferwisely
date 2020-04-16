@@ -10,6 +10,7 @@ import (
     "net/url"
     "os"
     "strconv"
+    "strings"
     "time"
 )
 
@@ -21,6 +22,7 @@ const (
     transfersAPIPath = "v1/transfers"
     quotesAPIPath = "v1/quotes"
     liveRateAPIPath = "v1/rates"
+    cancelTransferAPIPath = "v1/transfers/{transferId}/cancel"
     )
 
 func checkAndProcess() (uint64, error) {
@@ -56,7 +58,7 @@ func compareRates() (result bool, bookedTransfer Transfer, err error) {
 
     marginRate, err := strconv.ParseFloat(margin, 64)
     bookedRate := bookedTransfer.Rate
-    if liveRate < bookedRate || (liveRate - bookedRate >= marginRate) {
+    if liveRate > bookedRate || (liveRate - bookedRate >= marginRate) {
         return true, bookedTransfer, nil
     }
 
@@ -91,7 +93,24 @@ func createTransfer(oldTransfer Transfer) (uint64, error) {
         return 0, fmt.Errorf("error getting new transfer id: %v", err)
     }
 
+    cancelResult, err := cancelTransfer(oldTransfer.Id)
+    if !cancelResult || err != nil {
+        log.Println("Error deleting old transfer")
+    }
+
     return uint64(newTransferId), nil
+}
+
+func cancelTransfer(transferId uint64) (bool, error) {
+    path := strings.Replace(cancelTransferAPIPath, "{transferId}", strconv.FormatUint(transferId, 10), 1)
+
+    url := &url.URL{Host: host, Scheme: "https", Path: path}
+    _, code , err := callExternalAPI(http.MethodPut, url.String(), nil)
+    if err != nil || code != http.StatusOK {
+        return false, fmt.Errorf("error PUT cancel transfer API: %v : %v", code, err)
+    }
+
+    return true, nil
 }
 
 func getBookedTransfer() (Transfer, error) {
