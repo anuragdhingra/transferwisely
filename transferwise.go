@@ -17,6 +17,8 @@ import (
 var host            = os.Getenv("HOST")
 var margin          = os.Getenv("MARGIN")
 var sourceAmount    = os.Getenv("SOURCE_AMOUNT")
+var sourceCurrency  = os.Getenv("SOURCE_CURRENCY")
+var targetCurrency  = os.Getenv("TARGET_CURRENCY")
 
 const (
     transfersAPIPath = "v1/transfers"
@@ -257,8 +259,8 @@ type createQuoteRequest struct {
 
 func NewCreateQuoteRequest() createQuoteRequest {
     return createQuoteRequest{
-        Source:     "PHP",
-        Target:     "GBP",
+        Source:     sourceCurrency,
+        Target:     targetCurrency,
         RateType:   "FIXED",
         Type:       "REGULAR",
     }
