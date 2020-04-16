@@ -103,7 +103,7 @@ func getBookedTransfer() (Transfer, error) {
         return Transfer{}, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
     }
 
-    data, ok := response.([]map[string]interface{})
+    data, ok := response.([]interface{})
     if !ok {
         return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting response")
     }
@@ -112,18 +112,22 @@ func getBookedTransfer() (Transfer, error) {
         return Transfer{}, fmt.Errorf("getBookedTransfer: no booked transfer found")
     }
 
+    transferRecord, ok := data[0].(map[string]interface{})
+    if !ok {
+        return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting transferRecord")
+    }
 
-    transferId, ok := data[0]["id"].(float64)
+    transferId, ok := transferRecord["id"].(float64)
     if !ok {
         return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting transfer id")
     }
 
-    targetAccount, ok := data[0]["targetAccount"].(float64)
+    targetAccount, ok := transferRecord["targetAccount"].(float64)
     if !ok {
         return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting transfer account")
     }
 
-    bookedRate, ok := data[0]["rate"].(float64)
+    bookedRate, ok := transferRecord["rate"].(float64)
     if !ok {
         return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting rate")
     }
@@ -140,12 +144,17 @@ func getLiveRate() (float64, error) {
         return 0, fmt.Errorf("error GET live rate API: %v : %v", code, err)
     }
 
-    data, ok := response.([]map[string]interface{})
+    data, ok := response.([]interface{})
     if !ok {
         return 0, fmt.Errorf("getLiveRate: error typecasting response")
     }
 
-    liveRate, ok := data[0]["rate"].(float64)
+    liveData, ok := data[0].(map[string]interface{})
+    if !ok {
+        return 0, fmt.Errorf("getBookedTransfer: error typecasting response")
+    }
+
+    liveRate, ok := liveData["rate"].(float64)
     if !ok {
         return 0, fmt.Errorf("getLiveRate: error typecasting live rate")
     }
