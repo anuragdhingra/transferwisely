@@ -1,42 +1,21 @@
 package main
 
 import (
-    "encoding/json"
     "fmt"
-    "github.com/go-chi/chi"
-    "github.com/go-chi/chi/middleware"
-    "log"
+    "github.com/go-co-op/gocron"
     "net/http"
+    "os"
+    "strconv"
+    "time"
 )
 
 func main() {
-    r := chi.NewRouter()
-    r.Use(middleware.Logger)
+    interval, _ := strconv.ParseUint(os.Getenv("INTERVAL"), 10, 64)
 
-    fmt.Println("Starting server on port 3000")
-    r.Get("/check", Check)
-    _ = http.ListenAndServe(":3000", r)
-}
+    s1 := gocron.NewScheduler(time.UTC)
+    s1.Every(interval).Minutes().Do(checkAndProcess)
+    s1.Start()
 
-func Check(w http.ResponseWriter, r *http.Request)  {
-    transferId, err := checkAndProcess()
-    w.Header().Set("Content-Type", "application/json")
-
-    if err != nil {
-        log.Println(err)
-        w.WriteHeader(http.StatusInternalServerError)
-        response := errorResponse{http.StatusInternalServerError, err.Error()}
-        jsonResponse, _ := json.Marshal(response)
-        _, _ = w.Write(jsonResponse)
-        return
-    }
-
-
-    w.WriteHeader(http.StatusOK)
-    fmt.Fprint(w, transferId)
-}
-
-type errorResponse struct {
-    Code        int     `json:"code"`
-    Message     string  `json:"message"`
+    fmt.Println("Starting batch server on port 3000")
+    _ = http.ListenAndServe(":3000", nil)
 }

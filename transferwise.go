@@ -25,23 +25,24 @@ const (
     cancelTransferAPIPath = "v1/transfers/{transferId}/cancel"
     )
 
-func checkAndProcess() (uint64, error) {
+func checkAndProcess() {
     result, transfer, err := compareRates()
     if err != nil {
         log.Println(err)
-        return 0, fmt.Errorf("error reaching transferwise")
+        return
     }
     if !result {
-        return 0, fmt.Errorf("current booked transfer is at higher rate")
+        log.Printf("NO ACTION NEEDED | Transfer ID: %v, Rate: %v", transfer.Id, transfer.Rate,)
+        return
     }
 
-    newTransferId, err := createTransfer(transfer)
+    newTransferId, newRate, err := createTransfer(transfer)
     if err != nil || !result {
         log.Println(err)
-        return 0, fmt.Errorf("error reaching transferwise")
+        return
     }
 
-    return newTransferId, nil
+    log.Printf("NEW TRANSFER BOOKED | Transfer ID: %v, Rate: %v", newTransferId, newRate)
 }
 
 func compareRates() (result bool, bookedTransfer Transfer, err error) {
@@ -62,13 +63,13 @@ func compareRates() (result bool, bookedTransfer Transfer, err error) {
         return true, bookedTransfer, nil
     }
 
-    return false, empty, nil
+    return false, bookedTransfer, nil
 }
 
-func createTransfer(oldTransfer Transfer) (uint64, error) {
+func createTransfer(oldTransfer Transfer) (uint64, float64,  error) {
     quoteId, err := generateQuote()
     if err != nil {
-        return 0, fmt.Errorf("createTransfer: %v", err)
+        return 0, 0, fmt.Errorf("createTransfer: %v", err)
     }
     createRequest := CreateTransferRequest{
         TargetAccount:          oldTransfer.TargetAccount,
@@ -80,17 +81,21 @@ func createTransfer(oldTransfer Transfer) (uint64, error) {
     url := &url.URL{Host: host, Scheme: "https", Path: transfersAPIPath}
     response, code , err := callExternalAPI(http.MethodPost, url.String(), request)
     if err != nil || code != http.StatusOK {
-        return 0, fmt.Errorf("error POST create transfer API: %v : %v", code, err)
+        return 0, 0, fmt.Errorf("error POST create transfer API: %v : %v", code, err)
     }
 
     data, ok := response.(map[string]interface{})
     if !ok {
-        return 0, fmt.Errorf("createTransfer: error typecasting response")
+        return 0, 0, fmt.Errorf("createTransfer: error typecasting response")
     }
 
     newTransferId, ok := data["id"].(float64)
     if !ok {
-        return 0, fmt.Errorf("error getting new transfer id: %v", err)
+        return 0, 0, fmt.Errorf("error typecasting new transfer id: %v", err)
+    }
+    newRate, ok := data["rate"].(float64)
+    if !ok {
+        return 0, 0, fmt.Errorf("error typecasting new transfer id: %v", err)
     }
 
     cancelResult, err := cancelTransfer(oldTransfer.Id)
@@ -98,7 +103,7 @@ func createTransfer(oldTransfer Transfer) (uint64, error) {
         log.Println("Error deleting old transfer")
     }
 
-    return uint64(newTransferId), nil
+    return uint64(newTransferId), newRate, nil
 }
 
 func cancelTransfer(transferId uint64) (bool, error) {
