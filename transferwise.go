@@ -3,8 +3,10 @@ package main
 import (
     "bytes"
     "encoding/json"
+    "errors"
     "fmt"
     "github.com/google/uuid"
+    "github.com/mitchellh/mapstructure"
     "log"
     "net/http"
     "net/url"
@@ -14,12 +16,7 @@ import (
     "time"
 )
 
-var host            = os.Getenv("HOST")
-var margin          = os.Getenv("MARGIN")
-var sourceAmount    = os.Getenv("SOURCE_AMOUNT")
-var sourceCurrency  = os.Getenv("SOURCE_CURRENCY")
-var targetCurrency  = os.Getenv("TARGET_CURRENCY")
-
+// transfer-wise api paths
 const (
     transfersAPIPath = "v1/transfers"
     quotesAPIPath = "v1/quotes"
@@ -27,24 +24,48 @@ const (
     cancelTransferAPIPath = "v1/transfers/{transferId}/cancel"
     )
 
+// error
+const ErrNoCurrentTransferFound  = "error: no current transfer found, please create a transfer before proceeding"
+
+// fallback values for optional env variables
+const (
+    fallbackInterval = "1"
+    fallbackMargin = "0"
+)
+
+// env vars
+var hostVar         = getEnv("HOST", "")
+var apiTokenVar     = getEnv("API_TOKEN", "")
+var marginVar       = getEnv("MARGIN", fallbackMargin)
+var intervalVar     = getEnv("INTERVAL", fallbackInterval)
+var sourceAmountVar = getEnv("SOURCE_AMOUNT", "")
+
+
 func checkAndProcess() {
+    if hostVar == "" || apiTokenVar == "" {
+        log.Println("error: env variables API_TOKEN and HOST are both required")
+        return
+    }
+
     result, transfer, err := compareRates()
     if err != nil {
         log.Println(err)
         return
     }
     if !result {
-        log.Printf("NO ACTION NEEDED | Transfer ID: %v, Rate: %v", transfer.Id, transfer.Rate,)
+        log.Printf("NO ACTION NEEDED || Transfer ID: %v | {%v} --> {%v} | Amount: %v | Rate: %v ||",
+            transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.SourceAmount, transfer.Rate)
         return
     }
 
-    newTransferId, newRate, err := createTransfer(transfer)
+    newTransfer, err := createTransfer(transfer)
     if err != nil || !result {
         log.Println(err)
         return
     }
 
-    log.Printf("NEW TRANSFER BOOKED | Transfer ID: %v, Rate: %v", newTransferId, newRate)
+    log.Printf("NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Amount: %v | Rate: %v ||",
+        newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.SourceAmount, newTransfer.Rate)
 }
 
 func compareRates() (result bool, bookedTransfer Transfer, err error) {
@@ -54,24 +75,87 @@ func compareRates() (result bool, bookedTransfer Transfer, err error) {
         return false, empty, fmt.Errorf("compareRates: %v", err)
     }
 
-    liveRate, err := getLiveRate()
+    liveRate, err := getLiveRate(bookedTransfer.SourceCurrency, bookedTransfer.TargetCurrency)
     if err != nil || liveRate == 0 {
         return false, empty, fmt.Errorf("compareRates: %v", err)
     }
 
-    marginRate, err := strconv.ParseFloat(margin, 64)
+    marginRate, err := strconv.ParseFloat(marginVar, 64)
+    if err != nil {
+        return false, empty, fmt.Errorf("compareRates: %v", err)
+    }
+
     bookedRate := bookedTransfer.Rate
-    if liveRate > bookedRate || (liveRate - bookedRate >= marginRate) {
+    if liveRate > bookedRate && (liveRate - bookedRate >= marginRate) {
         return true, bookedTransfer, nil
     }
 
     return false, bookedTransfer, nil
 }
 
-func createTransfer(oldTransfer Transfer) (uint64, float64,  error) {
-    quoteId, err := generateQuote()
+func getBookedTransfer() (Transfer, error) {
+    params := url.Values{"limit": {"3"}, "offset": {"0"}, "status": {"incoming_payment_waiting"}}
+    url := &url.URL{RawQuery: params.Encode(), Host: hostVar, Scheme: "https", Path: transfersAPIPath}
+
+    response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
+    if err != nil || code != http.StatusOK {
+        return Transfer{}, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
+    }
+
+    var transfersList []Transfer
+    err = mapstructure.Decode(response, &transfersList)
     if err != nil {
-        return 0, 0, fmt.Errorf("createTransfer: %v", err)
+        return Transfer{}, fmt.Errorf("error decoding response: %v", err)
+    }
+
+    if len(transfersList) == 0 {
+        return Transfer{}, fmt.Errorf(ErrNoCurrentTransferFound)
+    }
+
+    bookedTransfer := findBestTransfer(transfersList)
+
+    if bookedTransfer.Quote == 0 && sourceAmountVar == "" {
+        return Transfer{}, errors.New("error: env variable SOURCE_AMOUNT is also required in this case")
+    }
+
+    if bookedTransfer.Quote == 0 {
+        bookedTransfer.SourceAmount, err = strconv.ParseFloat(sourceAmountVar, 64)
+        if err != nil {
+            return Transfer{}, fmt.Errorf("getBookedTransfer: %v", err)
+        }
+    } else {
+        quoteDetail, err := getDetailByQuoteId(bookedTransfer.Quote)
+        if err != nil {
+            return Transfer{}, fmt.Errorf("getBookedTransfer: %v", err)
+        }
+        bookedTransfer.SourceAmount = quoteDetail.SourceAmount
+    }
+
+    return bookedTransfer, nil
+}
+
+func getLiveRate(source string, target string) (float64, error) {
+    params := url.Values{"source": {source}, "target": {target}}
+    url := &url.URL{RawQuery: params.Encode(), Host: hostVar, Scheme: "https", Path:liveRateAPIPath}
+
+    response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
+    if err != nil || code != http.StatusOK {
+        return 0, fmt.Errorf("error GET live rate API: %v : %v", code, err)
+    }
+
+    var liveRate []LiveRate
+    err = mapstructure.Decode(response, &liveRate)
+    if err != nil {
+        return 0, fmt.Errorf("error decoding live rate response: %v", err)
+    }
+
+    return liveRate[0].Rate, nil
+}
+
+func createTransfer(oldTransfer Transfer) (Transfer, error) {
+    quoteId, err := generateQuote(oldTransfer.SourceCurrency, oldTransfer.TargetCurrency, oldTransfer.SourceAmount)
+    if err != nil {
+        return Transfer{}, fmt.Errorf("createTransfer: %v", err)
     }
     createRequest := CreateTransferRequest{
         TargetAccount:          oldTransfer.TargetAccount,
@@ -80,38 +164,31 @@ func createTransfer(oldTransfer Transfer) (uint64, float64,  error) {
     }
     request, _ := json.Marshal(createRequest)
 
-    url := &url.URL{Host: host, Scheme: "https", Path: transfersAPIPath}
+    url := &url.URL{Host: hostVar, Scheme: "https", Path: transfersAPIPath}
     response, code , err := callExternalAPI(http.MethodPost, url.String(), request)
     if err != nil || code != http.StatusOK {
-        return 0, 0, fmt.Errorf("error POST create transfer API: %v : %v", code, err)
+        return Transfer{}, fmt.Errorf("error POST create transfer API: %v : %v", code, err)
     }
 
-    data, ok := response.(map[string]interface{})
-    if !ok {
-        return 0, 0, fmt.Errorf("createTransfer: error typecasting response")
+    var newTransfer Transfer
+    err = mapstructure.Decode(response, &newTransfer)
+    if err != nil {
+        return Transfer{}, fmt.Errorf("error decoding response: %v", err)
     }
-
-    newTransferId, ok := data["id"].(float64)
-    if !ok {
-        return 0, 0, fmt.Errorf("error typecasting new transfer id: %v", err)
-    }
-    newRate, ok := data["rate"].(float64)
-    if !ok {
-        return 0, 0, fmt.Errorf("error typecasting new transfer id: %v", err)
-    }
+    newTransfer.SourceAmount = oldTransfer.SourceAmount
 
     cancelResult, err := cancelTransfer(oldTransfer.Id)
     if !cancelResult || err != nil {
-        log.Println("Error deleting old transfer")
+       log.Println("Error deleting old transfer")
     }
 
-    return uint64(newTransferId), newRate, nil
+    return newTransfer, nil
 }
 
 func cancelTransfer(transferId uint64) (bool, error) {
     path := strings.Replace(cancelTransferAPIPath, "{transferId}", strconv.FormatUint(transferId, 10), 1)
 
-    url := &url.URL{Host: host, Scheme: "https", Path: path}
+    url := &url.URL{Host: hostVar, Scheme: "https", Path: path}
     _, code , err := callExternalAPI(http.MethodPut, url.String(), nil)
     if err != nil || code != http.StatusOK {
         return false, fmt.Errorf("error PUT cancel transfer API: %v : %v", code, err)
@@ -120,107 +197,54 @@ func cancelTransfer(transferId uint64) (bool, error) {
     return true, nil
 }
 
-func getBookedTransfer() (Transfer, error) {
-    params := url.Values{"limit": {"1"}, "offset": {"0"}, "status": {"incoming_payment_waiting"}}
-    url := &url.URL{RawQuery: params.Encode(), Host: host, Scheme: "https", Path: transfersAPIPath}
-
-    response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
-    if err != nil || code != http.StatusOK {
-        return Transfer{}, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
-    }
-
-    data, ok := response.([]interface{})
-    if !ok {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting response")
-    }
-
-    if len(data) == 0 {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: no booked transfer found")
-    }
-
-    transferRecord, ok := data[0].(map[string]interface{})
-    if !ok {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting transferRecord")
-    }
-
-    transferId, ok := transferRecord["id"].(float64)
-    if !ok {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting transfer id")
-    }
-
-    targetAccount, ok := transferRecord["targetAccount"].(float64)
-    if !ok {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting transfer account")
-    }
-
-    bookedRate, ok := transferRecord["rate"].(float64)
-    if !ok {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: error typecasting rate")
-    }
-
-    return Transfer{uint64(transferId), uint64(targetAccount), bookedRate}, nil
-}
-
-func getLiveRate() (float64, error) {
-    params := url.Values{"source": {"PHP"}, "target": {"GBP"}}
-    url := &url.URL{RawQuery: params.Encode(), Host: host, Scheme: "https", Path:liveRateAPIPath}
-
-    response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
-    if err != nil || code != http.StatusOK {
-        return 0, fmt.Errorf("error GET live rate API: %v : %v", code, err)
-    }
-
-    data, ok := response.([]interface{})
-    if !ok {
-        return 0, fmt.Errorf("getLiveRate: error typecasting response")
-    }
-
-    liveData, ok := data[0].(map[string]interface{})
-    if !ok {
-        return 0, fmt.Errorf("getBookedTransfer: error typecasting response")
-    }
-
-    liveRate, ok := liveData["rate"].(float64)
-    if !ok {
-        return 0, fmt.Errorf("getLiveRate: error typecasting live rate")
-    }
-
-    return liveRate, nil
-}
-
-func generateQuote() (uint64, error) {
-
+func generateQuote(source string, target string, sourceAmount float64) (uint64, error) {
     quoteRequest := NewCreateQuoteRequest()
-    quoteRequest.SourceAmount, _ = strconv.ParseUint(sourceAmount, 10, 64)
+    quoteRequest.Source = source
+    quoteRequest.Target = target
+    quoteRequest.SourceAmount = sourceAmount
+
     request, _ := json.Marshal(quoteRequest)
 
-    url := &url.URL{Host: host, Scheme: "https", Path: quotesAPIPath}
+    url := &url.URL{Host: hostVar, Scheme: "https", Path: quotesAPIPath}
     response, code, err := callExternalAPI(http.MethodPost, url.String(), request)
     if err != nil || code != http.StatusOK {
-        return 0, fmt.Errorf("error GET quote API: %v : %v", code, err)
+        return 0, fmt.Errorf("error POST quote API: %v : %v", code, err)
     }
 
-    data, ok := response.(map[string]interface{})
-    if !ok {
-        return 0, fmt.Errorf("generateQuote: error typecasting response")
+    var quote QuoteDetail
+    err = mapstructure.Decode(response, &quote)
+    if err != nil {
+        return 0, fmt.Errorf("error decoding quote response: %v", err)
     }
 
-    quoteId, ok := data["id"].(float64)
-    if !ok {
-        return 0, fmt.Errorf("generateQuote: error typecasting quoteId")
+    return quote.Id, nil
+}
+
+func getDetailByQuoteId(quoteId uint64) (QuoteDetail, error) {
+    path := quotesAPIPath + "/" + strconv.FormatUint(quoteId, 10)
+    url := &url.URL{Host: hostVar, Scheme: "https", Path: path}
+
+    response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
+    if err != nil || code != http.StatusOK {
+        return QuoteDetail{}, fmt.Errorf("error GET quote detail API: %v : %v", code, err)
     }
 
-    return uint64(quoteId), nil
+    var quoteDetail QuoteDetail
+    err = mapstructure.Decode(response, &quoteDetail)
+    if err != nil || code != http.StatusOK {
+        return QuoteDetail{}, fmt.Errorf("error decoding to quote detail: %v : %v", code, err)
+    }
+
+    return quoteDetail, nil
 }
 
 func callExternalAPI(method string, url string, reqBody []byte) (response interface{}, code int, err error) {
-
     client := &http.Client{Timeout: 10 * time.Second}
     req, err := http.NewRequest(method, url, bytes.NewReader(reqBody))
     if err != nil {
         return nil, http.StatusInternalServerError, fmt.Errorf("error creating external api request: %v", err)
     }
-    req.Header.Add("Authorization", "Bearer " + os.Getenv("API_TOKEN"))
+    req.Header.Add("Authorization", "Bearer " + apiTokenVar)
     req.Header.Add("Content-Type", "application/json")
 
     res, err := client.Do(req)
@@ -237,10 +261,43 @@ func callExternalAPI(method string, url string, reqBody []byte) (response interf
     return
 }
 
+func findBestTransfer(transferList []Transfer) (bestTransfer Transfer){
+    for i := range transferList {
+        if i==0 || bestTransfer.Rate < transferList[i].Rate  {
+            bestTransfer = transferList[i]
+        }
+    }
+    return
+}
+
+func getEnv(key, fallback string) string {
+    if value, ok := os.LookupEnv(key); ok {
+        return value
+    }
+
+    return fallback
+}
+
 type Transfer struct {
     Id              uint64      `json:"id"`
     TargetAccount   uint64      `json:"targetAccount"`
+    SourceAmount    float64     `json:"sourceAmount"`
     Rate            float64     `json:"rate"`
+    Quote           uint64      `json:"quote"`
+    SourceCurrency  string      `json:"sourceCurrency"`
+    TargetCurrency  string      `json:"targetCurrency"`
+}
+
+type QuoteDetail struct {
+    Id              uint64      `json:"id"`
+    SourceAmount    float64     `json:"sourceAmount"`
+    Rate            float64     `json:"rate"`
+    Source          string      `json:"source"`
+    Target          string      `json:"target"`
+}
+
+type LiveRate struct {
+    Rate  float64 `json:"rate"`
 }
 
 type CreateTransferRequest struct {
@@ -249,18 +306,16 @@ type CreateTransferRequest struct {
     CustomerTransactionId   string   `json:"customerTransactionId"`
 }
 
-type createQuoteRequest struct {
-    Source          string  `json:"source"`
-    Target          string  `json:"target"`
-    RateType        string  `json:"rateType"`
-    SourceAmount    uint64   `json:"sourceAmount"`
-    Type            string  `json:"type"`
+type CreateQuoteRequest struct {
+    Source          string      `json:"source"`
+    Target          string      `json:"target"`
+    RateType        string      `json:"rateType"`
+    SourceAmount    float64     `json:"sourceAmount"`
+    Type            string      `json:"type"`
 }
 
-func NewCreateQuoteRequest() createQuoteRequest {
-    return createQuoteRequest{
-        Source:     sourceCurrency,
-        Target:     targetCurrency,
+func NewCreateQuoteRequest() CreateQuoteRequest {
+    return CreateQuoteRequest{
         RateType:   "FIXED",
         Type:       "REGULAR",
     }
