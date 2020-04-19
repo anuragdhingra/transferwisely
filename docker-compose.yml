@@ -6,6 +6,5 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      - app.env
+    image: transferwise-batch
     container_name: transferwise_batch
