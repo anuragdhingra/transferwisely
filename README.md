@@ -27,8 +27,6 @@ docker run \
 -e SOURCE_AMOUNT=10000 \
 -e MARGIN=0.001 \
 -e INTERVAL=1 \
--e SOURCE_CURRENCY=PHP \
--e TARGET_CURRENCY=GBP \
 anuragdhingra/transferwise-batch:v1.0
 ```
 
@@ -39,7 +37,7 @@ _Note: Sandbox and production environment have different API Tokens._
 
 `SOURCE_AMOUNT`: Amount in source currency you want to book a transfer
 
-`MARGIN`: Currency margin at which you want to book a new transfer, once successful it cancels the existing one.
+`MARGIN` (optional, defaults to 0): Currency margin at which you want to book a new transfer, once successful it cancels the existing one.
 When `MARGIN`=0.01
 _(Please set it according to your respective currency rate change in absolute terms)_
 For example -
@@ -49,11 +47,7 @@ Live Rate --> 0.695 : NO ACTION NEEDED
 Live Rate --> 0.711 : NEW TRANSFER BOOKED, cancelling the old one
 ```
 
-`INTERVAL`: Time(in minutes) interval at which you want to query transferwise to check for better rates
-
-`SOURCE_CURRENCY`: Source currency code following [ISO 4217](https://www.xe.com/iso4217.php)
-
-`TARGET_CURRENCY`: Target currency code following [ISO 4217](https://www.xe.com/iso4217.php)
+`INTERVAL` (optional, defaults to 1): Time(in minutes) interval at which you want to query transferwise to check for better rates
 
 ### Other things to note before using this on production:
 - Currently, it doesnt supports creating a quote/transfer if there is no existing transfer at the moment. 
