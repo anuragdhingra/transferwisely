@@ -10,7 +10,7 @@ thus this was my naive attempt at solving this problem.
 
 
 ### Steps to follow
-- Pull the image from docker hub using:
+- Pull the pre-built image from docker hub using:
 
 ```bash
 docker pull anuragdhingra/transferwise-batch:v1.0
