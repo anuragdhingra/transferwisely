@@ -63,7 +63,7 @@ func checkAndProcess() {
     }
 
     log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v ||",
-        newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.SourceAmount, newTransfer.Rate)
+        newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount)
 }
 
 func compareRates() (result bool, bookedTransfer Transfer, currentRate float64, err error) {
