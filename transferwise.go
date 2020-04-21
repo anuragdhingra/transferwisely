@@ -3,7 +3,6 @@ package main
 import (
     "bytes"
     "encoding/json"
-    "errors"
     "fmt"
     "github.com/google/uuid"
     "github.com/mitchellh/mapstructure"
@@ -19,7 +18,7 @@ import (
 // transfer-wise api paths
 const (
     transfersAPIPath = "v1/transfers"
-    quotesAPIPath = "v1/quotes"
+    quotesAPIPath = "v2/quotes"
     liveRateAPIPath = "v1/rates"
     cancelTransferAPIPath = "v1/transfers/{transferId}/cancel"
     )
@@ -38,7 +37,6 @@ var hostVar         = getEnv("HOST", "")
 var apiTokenVar     = getEnv("API_TOKEN", "")
 var marginVar       = getEnv("MARGIN", fallbackMargin)
 var intervalVar     = getEnv("INTERVAL", fallbackInterval)
-var sourceAmountVar = getEnv("SOURCE_AMOUNT", "")
 
 
 func checkAndProcess() {
@@ -47,14 +45,14 @@ func checkAndProcess() {
         return
     }
 
-    result, transfer, err := compareRates()
+    result, transfer, liveRate, err := compareRates()
     if err != nil {
         log.Println(err)
         return
     }
     if !result {
-        log.Printf("NO ACTION NEEDED || Transfer ID: %v | {%v} --> {%v} | Amount: %v | Rate: %v ||",
-            transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.SourceAmount, transfer.Rate)
+        log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v ||",
+            liveRate, transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.Rate, transfer.SourceAmount)
         return
     }
 
@@ -64,33 +62,33 @@ func checkAndProcess() {
         return
     }
 
-    log.Printf("NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Amount: %v | Rate: %v ||",
+    log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v ||",
         newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.SourceAmount, newTransfer.Rate)
 }
 
-func compareRates() (result bool, bookedTransfer Transfer, err error) {
+func compareRates() (result bool, bookedTransfer Transfer, currentRate float64, err error) {
     empty := Transfer{}
     bookedTransfer, err = getBookedTransfer()
     if err != nil || bookedTransfer == empty {
-        return false, empty, fmt.Errorf("compareRates: %v", err)
+        return false, empty, 0, fmt.Errorf("compareRates: %v", err)
     }
 
     liveRate, err := getLiveRate(bookedTransfer.SourceCurrency, bookedTransfer.TargetCurrency)
     if err != nil || liveRate == 0 {
-        return false, empty, fmt.Errorf("compareRates: %v", err)
+        return false, empty, 0, fmt.Errorf("compareRates: %v", err)
     }
 
     marginRate, err := strconv.ParseFloat(marginVar, 64)
     if err != nil {
-        return false, empty, fmt.Errorf("compareRates: %v", err)
+        return false, empty, 0, fmt.Errorf("compareRates: %v", err)
     }
 
     bookedRate := bookedTransfer.Rate
     if liveRate > bookedRate && (liveRate - bookedRate >= marginRate) {
-        return true, bookedTransfer, nil
+        return true, bookedTransfer, 0, nil
     }
 
-    return false, bookedTransfer, nil
+    return false, bookedTransfer, liveRate, nil
 }
 
 func getBookedTransfer() (Transfer, error) {
@@ -113,23 +111,12 @@ func getBookedTransfer() (Transfer, error) {
     }
 
     bookedTransfer := findBestTransfer(transfersList)
-
-    if bookedTransfer.Quote == 0 && sourceAmountVar == "" {
-        return Transfer{}, errors.New("error: env variable SOURCE_AMOUNT is also required in this case")
+    quoteDetail, err := getDetailByQuoteId(bookedTransfer.QuoteUuid)
+    if err != nil {
+        return Transfer{}, fmt.Errorf("getBookedTransfer: %v", err)
     }
-
-    if bookedTransfer.Quote == 0 {
-        bookedTransfer.SourceAmount, err = strconv.ParseFloat(sourceAmountVar, 64)
-        if err != nil {
-            return Transfer{}, fmt.Errorf("getBookedTransfer: %v", err)
-        }
-    } else {
-        quoteDetail, err := getDetailByQuoteId(bookedTransfer.Quote)
-        if err != nil {
-            return Transfer{}, fmt.Errorf("getBookedTransfer: %v", err)
-        }
-        bookedTransfer.SourceAmount = quoteDetail.SourceAmount
-    }
+    bookedTransfer.SourceAmount = quoteDetail.SourceAmount
+    bookedTransfer.Profile = quoteDetail.Profile
 
     return bookedTransfer, nil
 }
@@ -153,14 +140,16 @@ func getLiveRate(source string, target string) (float64, error) {
 }
 
 func createTransfer(oldTransfer Transfer) (Transfer, error) {
-    quoteId, err := generateQuote(oldTransfer.SourceCurrency, oldTransfer.TargetCurrency, oldTransfer.SourceAmount)
+    quoteId, err := generateQuote(oldTransfer.SourceCurrency, oldTransfer.TargetCurrency, oldTransfer.SourceAmount, oldTransfer.Profile)
     if err != nil {
         return Transfer{}, fmt.Errorf("createTransfer: %v", err)
     }
+
     createRequest := CreateTransferRequest{
         TargetAccount:          oldTransfer.TargetAccount,
-        Quote:                  quoteId,
+        QuoteUuid:              quoteId,
         CustomerTransactionId:  uuid.New().String(),
+        Details:                oldTransfer.Details,
     }
     request, _ := json.Marshal(createRequest)
 
@@ -179,7 +168,7 @@ func createTransfer(oldTransfer Transfer) (Transfer, error) {
 
     cancelResult, err := cancelTransfer(oldTransfer.Id)
     if !cancelResult || err != nil {
-       log.Println("Error deleting old transfer")
+        log.Println("Error deleting old transfer")
     }
 
     return newTransfer, nil
@@ -197,31 +186,33 @@ func cancelTransfer(transferId uint64) (bool, error) {
     return true, nil
 }
 
-func generateQuote(source string, target string, sourceAmount float64) (uint64, error) {
-    quoteRequest := NewCreateQuoteRequest()
-    quoteRequest.Source = source
-    quoteRequest.Target = target
-    quoteRequest.SourceAmount = sourceAmount
+func generateQuote(source string, target string, sourceAmount float64, profile uint64) (string, error) {
+    quoteRequest := CreateQuoteRequest{
+        SourceCurrency: source,
+        TargetCurrency: target,
+        SourceAmount:   sourceAmount,
+        Profile:        profile,
+    }
 
     request, _ := json.Marshal(quoteRequest)
 
     url := &url.URL{Host: hostVar, Scheme: "https", Path: quotesAPIPath}
     response, code, err := callExternalAPI(http.MethodPost, url.String(), request)
     if err != nil || code != http.StatusOK {
-        return 0, fmt.Errorf("error POST quote API: %v : %v", code, err)
+        return "", fmt.Errorf("error POST quote API: %v : %v", code, err)
     }
 
     var quote QuoteDetail
     err = mapstructure.Decode(response, &quote)
     if err != nil {
-        return 0, fmt.Errorf("error decoding quote response: %v", err)
+        return "", fmt.Errorf("error decoding quote response: %v", err)
     }
 
     return quote.Id, nil
 }
 
-func getDetailByQuoteId(quoteId uint64) (QuoteDetail, error) {
-    path := quotesAPIPath + "/" + strconv.FormatUint(quoteId, 10)
+func getDetailByQuoteId(quoteUuid string) (QuoteDetail, error) {
+    path := quotesAPIPath + "/" + quoteUuid
     url := &url.URL{Host: hostVar, Scheme: "https", Path: path}
 
     response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
@@ -279,21 +270,30 @@ func getEnv(key, fallback string) string {
 }
 
 type Transfer struct {
-    Id              uint64      `json:"id"`
-    TargetAccount   uint64      `json:"targetAccount"`
-    SourceAmount    float64     `json:"sourceAmount"`
-    Rate            float64     `json:"rate"`
-    Quote           uint64      `json:"quote"`
-    SourceCurrency  string      `json:"sourceCurrency"`
-    TargetCurrency  string      `json:"targetCurrency"`
+    Id                  uint64              `json:"id"`
+    Profile             uint64              `json:"profile"`
+    TargetAccount       uint64              `json:"targetAccount"`
+    SourceAmount        float64             `json:"sourceAmount"`
+    Rate                float64             `json:"rate"`
+    QuoteUuid           string              `json:"quote"`
+    SourceCurrency      string              `json:"sourceCurrency"`
+    TargetCurrency      string              `json:"targetCurrency"`
+    Details             TransferDetails     `json:"details"`
+}
+
+type TransferDetails struct {
+    Reference           string    `json:"reference"`
+    TransferPurpose     string    `json:"transferPurpose"`
+    SourceOfFunds       string    `json:"sourceOfFunds"`
 }
 
 type QuoteDetail struct {
-    Id              uint64      `json:"id"`
-    SourceAmount    float64     `json:"sourceAmount"`
-    Rate            float64     `json:"rate"`
-    Source          string      `json:"source"`
-    Target          string      `json:"target"`
+    Id                  string      `json:"id"`
+    SourceAmount        float64     `json:"sourceAmount"`
+    Rate                float64     `json:"rate"`
+    SourceCurrency      string      `json:"source"`
+    TargetCurrency      string      `json:"target"`
+    Profile             uint64      `json:"profile"`
 }
 
 type LiveRate struct {
@@ -301,22 +301,15 @@ type LiveRate struct {
 }
 
 type CreateTransferRequest struct {
-    TargetAccount           uint64   `json:"targetAccount"`
-    Quote                   uint64   `json:"quote"`
-    CustomerTransactionId   string   `json:"customerTransactionId"`
+    TargetAccount           uint64              `json:"targetAccount"`
+    QuoteUuid               string              `json:"quoteUuid"`
+    CustomerTransactionId   string              `json:"customerTransactionId"`
+    Details                 TransferDetails     `json:"details"`
 }
 
 type CreateQuoteRequest struct {
-    Source          string      `json:"source"`
-    Target          string      `json:"target"`
-    RateType        string      `json:"rateType"`
-    SourceAmount    float64     `json:"sourceAmount"`
-    Type            string      `json:"type"`
-}
-
-func NewCreateQuoteRequest() CreateQuoteRequest {
-    return CreateQuoteRequest{
-        RateType:   "FIXED",
-        Type:       "REGULAR",
-    }
+    SourceCurrency          string      `json:"sourceCurrency"`
+    TargetCurrency          string      `json:"targetCurrency"`
+    SourceAmount            float64     `json:"sourceAmount"`
+    Profile                 uint64      `json:"profile"`
 }
