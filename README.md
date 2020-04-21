@@ -32,7 +32,7 @@ anuragdhingra/transferwisely:latest
 `ENV`: `sandbox` or `production`
 
 `API_TOKEN`: Generate it from [here](https://transferwise.com/help/19/transferwise-for-business/2958229/whats-a-personal-api-token-and-how-do-i-get-one).
-_Note: Sandbox and production environment have different API Tokens._
+_Note: Sandbox and production environment have different API Tokens. Also, make sure you use the `all_access` API token provided by transferwise._
 
 `MARGIN` (optional, defaults to 0): Currency margin at which you want to book a new transfer, value defaults to 0 i.e any higher rate
 When `MARGIN`=0.01
