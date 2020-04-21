@@ -23,8 +23,9 @@ const (
     cancelTransferAPIPath = "v1/transfers/{transferId}/cancel"
     )
 
-// error
-const ErrNoCurrentTransferFound  = "error: no current transfer found, please create a transfer before proceeding"
+// transferwise hosts
+const hostProduction = "api.transferwise.com"
+const hostSandbox    = "api.sandbox.transferwise.tech"
 
 // fallback values for optional env variables
 const (
@@ -32,16 +33,24 @@ const (
     fallbackMargin = "0"
 )
 
-// env vars
-var hostVar         = getEnv("HOST", "")
-var apiTokenVar     = getEnv("API_TOKEN", "")
-var marginVar       = getEnv("MARGIN", fallbackMargin)
-var intervalVar     = getEnv("INTERVAL", fallbackInterval)
+// constants
+const PRODUCTION  = "production"
+const SANDBOX     = "sandbox"
 
+// error messages
+const ErrNoCurrentTransferFound  = "error: no current transfer found, please create a transfer before proceeding"
+const ErrEnvVarMissingOrInvalid  = "error: make sure env variables ENV, API_TOKEN are both provided and are valid"
+
+// env vars
+var envVar       = getEnv("ENV", "")
+var hostVar      = getHost(envVar)
+var apiTokenVar  = getEnv("API_TOKEN", "")
+var marginVar    = getEnv("MARGIN", fallbackMargin)
+var intervalVar  = getEnv("INTERVAL", fallbackInterval)
 
 func checkAndProcess() {
     if hostVar == "" || apiTokenVar == "" {
-        log.Println("error: env variables API_TOKEN and HOST are both required")
+        log.Println(ErrEnvVarMissingOrInvalid)
         return
     }
 
@@ -259,6 +268,17 @@ func findBestTransfer(transferList []Transfer) (bestTransfer Transfer){
         }
     }
     return
+}
+
+func getHost(envVar string) string {
+    switch strings.ToLower(envVar) {
+    case SANDBOX:
+        return hostSandbox
+    case PRODUCTION:
+        return hostProduction
+    default:
+        return ""
+    }
 }
 
 func getEnv(key, fallback string) string {

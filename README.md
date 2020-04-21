@@ -3,8 +3,8 @@ Batch process using transfer-wise API to automatically detect better rates and b
 
 ### Why do we need this?
 [Transferwise](https://transferwise.com/) is a leading online money transfer service. 
-To make a transfer you can book a quote at live market rate which stays valid for 5 days from the date of booking.
-If you pay for that transfer in those 5 days, the transfer is successfully made to the recipient account else the quote expires.
+One can book a quote at live mid-market rate that further can be used to create a transfer. 
+This transfer is a payment order to recipient account based on a quote. Once created, a transfer needs to be funded within the next five working days. Otherwise, it will be automatically canceled.
 Its very easy to miss the best rates and kinda difficult to keep checking for them all the time if you are planning to make a transfer or if you do it too often, 
 thus this was my naive attempt at solving this problem.
 
@@ -22,22 +22,19 @@ docker pull anuragdhingra/transferwise-batch:v1.0
 docker run \
 --name transferwise-batch-sandbox \
 -d \
--e HOST=api.sandbox.transferwise.tech \
+-e ENV=production \
 -e API_TOKEN=<YOUR API TOKEN> \
--e SOURCE_AMOUNT=10000 \
 -e MARGIN=0.001 \
 -e INTERVAL=1 \
 anuragdhingra/transferwise-batch:v1.0
 ```
 
-`HOST`: For sandbox/testing use - `api.sandbox.transferwise.tech`, for production use - `api.transferwise.com`
+`ENV`: `sandbox` or `production`
 
 `API_TOKEN`: Generate it from [here](https://transferwise.com/help/19/transferwise-for-business/2958229/whats-a-personal-api-token-and-how-do-i-get-one).
 _Note: Sandbox and production environment have different API Tokens._
 
-`SOURCE_AMOUNT`: Amount in source currency you want to book a transfer
-
-`MARGIN` (optional, defaults to 0): Currency margin at which you want to book a new transfer, once successful it cancels the existing one.
+`MARGIN` (optional, defaults to 0): Currency margin at which you want to book a new transfer, value defaults to 0 i.e any higher rate
 When `MARGIN`=0.01
 _(Please set it according to your respective currency rate change in absolute terms)_
 For example -
@@ -51,7 +48,7 @@ Live Rate --> 0.711 : NEW TRANSFER BOOKED, cancelling the old one
 
 ### Other things to note before using this on production:
 - Currently, it doesnt supports creating a quote/transfer if there is no existing transfer at the moment. 
-The reason to this being all the info regarding the transfer like recipient account,amount etc. is taken from it.
+The reason to this being all the info regarding the new transfer to be made like recipient account,amount etc. is taken from the existing transfer.
 - At the moment, as transferwise at maximum blocks live rate for first three of all your transfers booked.
 Thus, the batch also gets only the first three or less existing transfers you have to compare for better rates.
 
