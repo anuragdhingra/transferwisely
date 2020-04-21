@@ -6,5 +6,5 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: transferwise-batch
-    container_name: transferwise_batch
+    image: transferwisely:latest
+    container_name: transferwisely_batch

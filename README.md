@@ -1,4 +1,4 @@
-# transferwise-go
+# transferwisely
 Batch process using transfer-wise API to automatically detect better rates and book transfers for you.
 
 ### Why do we need this?
@@ -26,7 +26,7 @@ docker run \
 -e API_TOKEN=<YOUR API TOKEN> \
 -e MARGIN=0.001 \
 -e INTERVAL=1 \
-anuragdhingra/transferwise-batch:v1.0
+anuragdhingra/transferwisely:latest
 ```
 
 `ENV`: `sandbox` or `production`
