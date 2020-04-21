@@ -13,7 +13,7 @@ thus this was my naive attempt at solving this problem.
 - Pull the pre-built image from docker hub using:
 
 ```bash
-docker pull anuragdhingra/transferwise-batch:latest
+docker pull anuragdhingra/transferwisely:latest
 ```
 
 - Run the image passing the following env variables:
