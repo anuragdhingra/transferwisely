@@ -1,5 +1,7 @@
 # transferwisely [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/anuragdhingra/transferwisely/master/LICENSE) 
-Batch process using transfer-wise API to automatically detect better rates and book transfers for you.
+Batch process using transfer-wise API to automatically track, detect and book transfers for you at better rates.
+
+![transferwisely-logs.png](transferwisely-logs.png)
 
 ### Why do we need this?
 [Transferwise](https://transferwise.com/) is a leading online money transfer service. 
@@ -20,7 +22,7 @@ docker pull anuragdhingra/transferwisely:latest
 
 ```bash
 docker run \
---name transferwise-batch-sandbox \
+--name transferwisely-sandbox \
 -d \
 -e ENV=production \
 -e API_TOKEN=<YOUR API TOKEN> \
@@ -76,7 +78,11 @@ Why 36 hours? Just because it should be enough time for us to decide on it.
 Currently, the batch uses the free tier SMTP server provided by gmail. 
 We strongly recommend to create a new gmail account that will be used to send these mails to your original email account 
 and just pass the newly created gmail as `FROM_MAIL` and its password as `MAIL_PASS`. Also, to start 
-receiving mails you'd need to enable [access to less secure app](https://support.google.com/a/answer/6260879?hl=en) setting on your newly created gmail.
+receiving mails you'd need to enable [access to less secure app](https://support.google.com/a/answer/6260879?hl=en) 
+on your newly created gmail account.
+
+![transferwisely-reminder-mail-sample.png](transferwisely-reminder-mail-sample.png)
+
 
 ### Improvements
 - Add testing
