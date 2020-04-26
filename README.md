@@ -28,7 +28,7 @@ docker run \
 -e INTERVAL=1 \
 -e TO_MAIL=mymail@gmail.com \
 -e FROM_MAIL=dummy@gmail.com \
--e MAIL_PASS=dummypassword
+-e MAIL_PASS=dummypassword \
 anuragdhingra/transferwisely:latest
 ```
 
