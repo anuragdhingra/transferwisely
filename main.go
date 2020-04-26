@@ -17,6 +17,7 @@ func main() {
 
     s1 := gocron.NewScheduler(time.UTC)
     s1.Every(interval).Minutes().Do(checkAndProcess)
+    s1.Every(12).Hours().Do(sendExpiryReminderMail)
     s1.Start()
 
     fmt.Println("Starting batch server on port 3000")
