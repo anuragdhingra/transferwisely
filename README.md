@@ -1,4 +1,4 @@
-# transferwisely [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/anuragdhingra/transferwisely/master/LICENSE) [![Release version](https://img.shields.io/github/v/release/anuragdhingra/transferwisely)]
+# transferwisely [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/anuragdhingra/transferwisely/master/LICENSE) ![Release version](https://img.shields.io/github/v/release/anuragdhingra/transferwisely)
 Batch process using transfer-wise API to automatically track, detect and book transfers for you at better rates.
 
 ![transferwisely-logs.png](transferwisely-logs.png)
