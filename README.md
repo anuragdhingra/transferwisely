@@ -12,7 +12,7 @@ thus this was my naive attempt at solving this problem.
 
 
 ### Steps to follow
-- Pull the pre-built image from docker hub using:
+- Pull the pre-built image from [docker hub](https://hub.docker.com/r/anuragdhingra/transferwisely) using:
 
 ```bash
 docker pull anuragdhingra/transferwisely:latest
