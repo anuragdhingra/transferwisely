@@ -1,4 +1,4 @@
-# transferwisely [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/anuragdhingra/transferwisely/master/LICENSE) 
+# transferwisely [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/anuragdhingra/transferwisely/master/LICENSE) [![Release version](https://img.shields.io/github/v/release/anuragdhingra/transferwisely)]
 Batch process using transfer-wise API to automatically track, detect and book transfers for you at better rates.
 
 ![transferwisely-logs.png](transferwisely-logs.png)
@@ -9,6 +9,12 @@ One can book a quote at live mid-market rate that further can be used to create 
 This transfer is a payment order to recipient account based on a quote. Once created, a transfer needs to be funded within the next five working days. Otherwise, it will be automatically canceled.
 Its very easy to miss the best rates and kinda difficult to keep checking for them all the time if you are planning to make a transfer or if you do it too often, 
 thus this was my naive attempt at solving this problem.
+
+### Features
+- Auto track, detect and book transfers from your exisiting transfers, no additional info required.
+- Auto cancels the older transfer, only when creating the new transfer was successful. Thus not exceeding your quota of three guaranteed rate tranfers provided by transferwise.
+- Mail reminder when your existing best booked quote is about to expire within next 36 hours.
+- Compact multi-stage built binary easy to manage and self-deploy.
 
 
 ### Steps to follow
@@ -98,10 +104,3 @@ This project is licensed under the MIT License - read [LICENSE](LICENSE) file fo
 
 ## Star and watch 
 Watch this repository for updates and please give a star if you are using it or find it useful.
-
-
-
-
-
-
-
