@@ -5,9 +5,11 @@ import (
     "encoding/json"
     "fmt"
     "github.com/google/uuid"
+    "github.com/jordan-wright/email"
     "github.com/mitchellh/mapstructure"
     "log"
     "net/http"
+    "net/smtp"
     "net/url"
     "os"
     "strconv"
@@ -23,17 +25,32 @@ const (
     cancelTransferAPIPath = "v1/transfers/{transferId}/cancel"
     )
 
-// transferwise hosts
-const hostProduction = "api.transferwise.com"
-const hostSandbox    = "api.sandbox.transferwise.tech"
+// transfer-wise hosts
+const (
+    hostProduction = "api.transferwise.com"
+    hostSandbox    = "api.sandbox.transferwise.tech"
+    )
 
 // fallback values for optional env variables
 const (
     fallbackInterval = "1"
     fallbackMargin = "0"
-)
+    )
 
-// constants
+// SMTP mail server
+const (
+    smtpHost = "smtp.gmail.com"
+    smtpPort = "587"
+    )
+// other mail related constants
+const (
+    reminderMailSubject = "Reminder: Your transfer is about to expire"
+    reminderMailBody = "<h4>&#128184; The following transfer is going to expire on <b>%v</b></h4>" +
+                       "<ul> <li>Transfer ID: %v </li> <li> {%v} --> {%v} </li> <li> Booked Rate: %v </li> <li> Amount: %v %v </li> </ul>"
+    expiryPeriodInHours = 36
+    )
+
+// other constants
 const PRODUCTION  = "production"
 const SANDBOX     = "sandbox"
 
@@ -42,37 +59,77 @@ const ErrNoCurrentTransferFound  = "error: no current transfer found, please cre
 const ErrEnvVarMissingOrInvalid  = "error: make sure env variables ENV, API_TOKEN are both provided and are valid"
 
 // env vars
-var envVar       = getEnv("ENV", "")
-var hostVar      = getHost(envVar)
-var apiTokenVar  = getEnv("API_TOKEN", "")
-var marginVar    = getEnv("MARGIN", fallbackMargin)
-var intervalVar  = getEnv("INTERVAL", fallbackInterval)
+var envVar       =  getEnv("ENV", "")
+var hostVar      =  getHost(envVar)
+var apiTokenVar  =  getEnv("API_TOKEN", "")
+var marginVar    =  getEnv("MARGIN", fallbackMargin)
+var intervalVar  =  getEnv("INTERVAL", fallbackInterval)
+var toEmailVar   =  getEnv("TO_MAIL", "")
+var fromEmailVar =  getEnv("FROM_MAIL", "")
+var mailPassVar  =  getEnv("MAIL_PASS", "")
 
 func checkAndProcess() {
     if hostVar == "" || apiTokenVar == "" {
-        log.Println(ErrEnvVarMissingOrInvalid)
-        return
+       log.Println(ErrEnvVarMissingOrInvalid)
+       return
     }
 
     result, transfer, liveRate, err := compareRates()
     if err != nil {
-        log.Println(err)
-        return
+       log.Println(err)
+       return
     }
     if !result {
-        log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v ||",
-            liveRate, transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.Rate, transfer.SourceAmount)
-        return
+       log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v ||",
+           liveRate, transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.Rate, transfer.SourceAmount)
+       return
     }
 
     newTransfer, err := createTransfer(transfer)
     if err != nil || !result {
-        log.Println(err)
-        return
+       log.Println(err)
+       return
     }
 
     log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v ||",
-        newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount)
+       newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount)
+}
+
+// Send reminder mail in case the best quote is about to expire
+func sendExpiryReminderMail() {
+    empty := Transfer{}
+    bookedTransfer, err := getBookedTransfer()
+    if err != nil || bookedTransfer == empty {
+        log.Printf("sendExpiryMail: %v", err)
+    }
+
+    quoteDetail, err := getDetailByQuoteId(bookedTransfer.QuoteUuid)
+    if err != nil {
+        log.Printf("sendExpiryMail: %v", err)
+    }
+
+    expiryTime, err := time.Parse(time.RFC3339, quoteDetail.RateExpirationTime)
+    if err != nil {
+        log.Printf("sendExpiryMail: %v", err)
+    }
+
+    if expiryTime.Sub(time.Now().UTC()).Hours() < expiryPeriodInHours {
+        body := fmt.Sprintf(
+            reminderMailBody,
+            expiryTime.Format("2006-01-02 15:04:05 UTC"),
+            bookedTransfer.Id,
+            bookedTransfer.SourceCurrency,
+            bookedTransfer.TargetCurrency,
+            bookedTransfer.Rate,
+            bookedTransfer.SourceCurrency,
+            bookedTransfer.SourceAmount,
+            )
+        err := sendMail(reminderMailSubject, []byte(body))
+        if err != nil {
+            log.Printf("sendExpiryMail: %v", err)
+        }
+    }
+    return
 }
 
 func compareRates() (result bool, bookedTransfer Transfer, currentRate float64, err error) {
@@ -270,6 +327,19 @@ func findBestTransfer(transferList []Transfer) (bestTransfer Transfer){
     return
 }
 
+func sendMail(subject string, body []byte) (err error) {
+    if toEmailVar == "" || fromEmailVar == "" || mailPassVar == "" {
+        return fmt.Errorf("error: env vars TO_MAIL, FROM_MAIL, MAIL_PASS not found")
+    }
+    e := email.NewEmail()
+    e.From = fmt.Sprintf(" Transferwisely <%s>",fromEmailVar)
+    e.To = []string{toEmailVar}
+    e.Subject = subject
+    e.HTML = body
+    err = e.Send(smtpHost + ":" + smtpPort, smtp.PlainAuth("", fromEmailVar, mailPassVar, smtpHost))
+    return
+}
+
 func getHost(envVar string) string {
     switch strings.ToLower(envVar) {
     case SANDBOX:
@@ -314,6 +384,7 @@ type QuoteDetail struct {
     SourceCurrency      string      `json:"source"`
     TargetCurrency      string      `json:"target"`
     Profile             uint64      `json:"profile"`
+    RateExpirationTime  string   `json:"rateExpirationTime"`
 }
 
 type LiveRate struct {
