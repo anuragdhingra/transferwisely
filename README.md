@@ -95,6 +95,7 @@ on your newly created gmail account.
 - Support creating a new transfer if no current transfer is present.
 - Enable support for multi-source-amount, multi-currency quote tracking and booking from the same account.
 - Alert user via notifications/SMS if a new transfer is booked on a better rate.
+- Status on price prediction, thus helping you decide if its a good time to go ahead with your transfer.
 
 ## Contributing
 We welcome [issues](https://github.com/anuragdhingra/transferwisely/issues) to and [pull requests](https://github.com/anuragdhingra/transferwisely/pulls) against this repository! For further info regarding transferwise APIs checkout [TransferWise API docs](https://transferwise.github.io/api-docs-banks/#transferwise-for-banks-api).
