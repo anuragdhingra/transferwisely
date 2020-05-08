@@ -68,6 +68,19 @@ var toEmailVar   =  getEnv("TO_MAIL", "")
 var fromEmailVar =  getEnv("FROM_MAIL", "")
 var mailPassVar  =  getEnv("MAIL_PASS", "")
 
+// HTTPClient interface
+type HTTPClient interface {
+    Do(req *http.Request) (*http.Response, error)
+}
+
+var (
+    Client HTTPClient
+)
+
+func init() {
+    Client = &http.Client{Timeout: 10 * time.Second}
+}
+
 func checkAndProcess() {
     if hostVar == "" || apiTokenVar == "" {
        log.Println(ErrEnvVarMissingOrInvalid)
@@ -288,7 +301,7 @@ func getDetailByQuoteId(quoteUuid string) (QuoteDetail, error) {
 
     var quoteDetail QuoteDetail
     err = mapstructure.Decode(response, &quoteDetail)
-    if err != nil || code != http.StatusOK {
+    if err != nil {
         return QuoteDetail{}, fmt.Errorf("error decoding to quote detail: %v : %v", code, err)
     }
 
@@ -296,7 +309,6 @@ func getDetailByQuoteId(quoteUuid string) (QuoteDetail, error) {
 }
 
 func callExternalAPI(method string, url string, reqBody []byte) (response interface{}, code int, err error) {
-    client := &http.Client{Timeout: 10 * time.Second}
     req, err := http.NewRequest(method, url, bytes.NewReader(reqBody))
     if err != nil {
         return nil, http.StatusInternalServerError, fmt.Errorf("error creating external api request: %v", err)
@@ -304,7 +316,7 @@ func callExternalAPI(method string, url string, reqBody []byte) (response interf
     req.Header.Add("Authorization", "Bearer " + apiTokenVar)
     req.Header.Add("Content-Type", "application/json")
 
-    res, err := client.Do(req)
+    res, err := Client.Do(req)
     if err != nil {
         return nil, http.StatusInternalServerError, fmt.Errorf("error calling external api: %v", err)
     }
@@ -384,7 +396,7 @@ type QuoteDetail struct {
     SourceCurrency      string      `json:"source"`
     TargetCurrency      string      `json:"target"`
     Profile             uint64      `json:"profile"`
-    RateExpirationTime  string   `json:"rateExpirationTime"`
+    RateExpirationTime  string      `json:"rateExpirationTime"`
 }
 
 type LiveRate struct {
