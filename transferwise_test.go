@@ -29,7 +29,7 @@ func TestGetDetailByQuoteId(t *testing.T)  {
         r := ioutil.NopCloser(bytes.NewReader(j))
         mocks.GetDoFunc = func(*http.Request) (*http.Response, error) {
             return &http.Response{
-                StatusCode: 200,
+                StatusCode: http.StatusOK,
                 Body:       r,
             }, nil
         }
@@ -48,7 +48,7 @@ func TestGetDetailByQuoteId(t *testing.T)  {
         r := ioutil.NopCloser(bytes.NewReader(j))
         mocks.GetDoFunc = func(*http.Request) (*http.Response, error) {
             return &http.Response{
-                StatusCode: 500,
+                StatusCode: http.StatusInternalServerError,
                 Body:       r,
             }, nil
         }
