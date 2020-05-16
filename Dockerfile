@@ -30,7 +30,7 @@ RUN cp /build/main .
 FROM alpine:latest
 
 # alpine:latest doesnt have the certs to make https requests we need to add it manually
-RUN apk add --no-cache ca-certificates openssl
+RUN apk add --no-cache ca-certificates openssl tzdata
 
 COPY --from=builder /dist/main /
 
