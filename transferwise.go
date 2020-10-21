@@ -87,117 +87,121 @@ func checkAndProcess() {
        return
     }
 
-    result, transfer, liveRate, err := compareRates()
+    err := compareRates()
     if err != nil {
        log.Println(err)
        return
     }
-    if !result {
-       log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v ||",
-           liveRate, transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.Rate, transfer.SourceAmount)
-       return
-    }
+    // if !result {
+    //    log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v | Total w/o Fees: %v ||",
+    //        liveRate, transfer.Id, transfer.SourceCurrency, transfer.TargetCurrency, transfer.Rate, transfer.SourceAmount, transfer.Rate * transfer.SourceAmount)
+    //    return
+    // }
 
-    newTransfer, err := createTransfer(transfer)
-    if err != nil || !result {
-       log.Println(err)
-       return
-    }
+    // newTransfer, err := createTransfer(transfer)
+    // if err != nil || !result {
+    //    log.Println(err)
+    //    return
+    // }
 
-    log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v ||",
-       newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount)
+    // log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v | Total w/o Fees: %v ||",
+    //    newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount, newTransfer.Rate * newTransfer.SourceAmount)
 }
 
 // Send reminder mail in case the best quote is about to expire
 func sendExpiryReminderMail() {
-    empty := Transfer{}
-    bookedTransfer, err := getBookedTransfer()
-    if err != nil || bookedTransfer == empty {
+    bookedTransfers, err := getBookedTransfers()
+    if err != nil || len(bookedTransfers) == 0 {
         log.Printf("sendExpiryMail: %v", err)
     }
-
-    quoteDetail, err := getDetailByQuoteId(bookedTransfer.QuoteUuid)
-    if err != nil {
-        log.Printf("sendExpiryMail: %v", err)
-    }
-
-    expiryTime, err := time.Parse(time.RFC3339, quoteDetail.RateExpirationTime)
-    if err != nil {
-        log.Printf("sendExpiryMail: %v", err)
-    }
-
-    if expiryTime.Sub(time.Now().UTC()).Hours() < expiryPeriodInHours {
-        body := fmt.Sprintf(
-            reminderMailBody,
-            expiryTime.Format("2006-01-02 15:04:05 UTC"),
-            bookedTransfer.Id,
-            bookedTransfer.SourceCurrency,
-            bookedTransfer.TargetCurrency,
-            bookedTransfer.Rate,
-            bookedTransfer.SourceCurrency,
-            bookedTransfer.SourceAmount,
-            )
-        err := sendMail(reminderMailSubject, []byte(body))
+    for i := range bookedTransfers {
+        quoteDetail, err := getDetailByQuoteId(bookedTransfers[i].QuoteUuid)
         if err != nil {
             log.Printf("sendExpiryMail: %v", err)
+        }
+        expiryTime, err := time.Parse(time.RFC3339, quoteDetail.RateExpirationTime)
+        if err != nil {
+            log.Printf("sendExpiryMail: %v", err)
+        }
+        if expiryTime.Sub(time.Now().UTC()).Hours() < expiryPeriodInHours {
+            body := fmt.Sprintf(
+                reminderMailBody,
+                expiryTime.Format("2006-01-02 15:04:05 UTC"),
+                bookedTransfers[i].Id,
+                bookedTransfers[i].SourceCurrency,
+                bookedTransfers[i].TargetCurrency,
+                bookedTransfers[i].Rate,
+                bookedTransfers[i].SourceCurrency,
+                bookedTransfers[i].SourceAmount,
+                )
+            err := sendMail(reminderMailSubject, []byte(body))
+            if err != nil {
+                log.Printf("sendExpiryMail: %v", err)
+            }
         }
     }
     return
 }
 
-func compareRates() (result bool, bookedTransfer Transfer, currentRate float64, err error) {
-    empty := Transfer{}
-    bookedTransfer, err = getBookedTransfer()
-    if err != nil || bookedTransfer == empty {
-        return false, empty, 0, fmt.Errorf("compareRates: %v", err)
+func compareRates() (err error) {
+    bookedTransfers, err := getBookedTransfers()
+    if err != nil || len(bookedTransfers) == 0 {
+        return fmt.Errorf("compareRates: %v", err)
     }
-
-    liveRate, err := getLiveRate(bookedTransfer.SourceCurrency, bookedTransfer.TargetCurrency)
-    if err != nil || liveRate == 0 {
-        return false, empty, 0, fmt.Errorf("compareRates: %v", err)
+    // assume all transfer currencies are the same
+    liveRate, err := getLiveRate(bookedTransfers[0].SourceCurrency, bookedTransfers[0].TargetCurrency)
+    for i := range bookedTransfers {
+        if err != nil || liveRate == 0 {
+            return fmt.Errorf("compareRates: %v", err)
+        }
+        marginRate, err := strconv.ParseFloat(marginVar, 64)
+        if err != nil {
+            return fmt.Errorf("compareRates: %v", err)
+        }
+        bookedRate := bookedTransfers[i].Rate
+        if liveRate > bookedRate && (liveRate - bookedRate >= marginRate) {
+            newTransfer, err := createTransfer(bookedTransfers[i])
+            if err != nil {
+                return fmt.Errorf("compareRates: %v", err)
+            }
+            log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v | Total w/o Fees: %v ||",
+                newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount, newTransfer.Rate * newTransfer.SourceAmount)
+        }else{
+            log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v | Total w/o Fees: %v ||",
+            liveRate, bookedTransfers[i].Id, bookedTransfers[i].SourceCurrency, bookedTransfers[i].TargetCurrency, bookedTransfers[i].Rate, bookedTransfers[i].SourceAmount, bookedTransfers[i].Rate * bookedTransfers[i].SourceAmount)
+        }
     }
-
-    marginRate, err := strconv.ParseFloat(marginVar, 64)
-    if err != nil {
-        return false, empty, 0, fmt.Errorf("compareRates: %v", err)
-    }
-
-    bookedRate := bookedTransfer.Rate
-    if liveRate > bookedRate && (liveRate - bookedRate >= marginRate) {
-        return true, bookedTransfer, 0, nil
-    }
-
-    return false, bookedTransfer, liveRate, nil
+    return nil
 }
 
-func getBookedTransfer() (Transfer, error) {
+func getBookedTransfers() ([]Transfer, error) {
     params := url.Values{"limit": {"3"}, "offset": {"0"}, "status": {"incoming_payment_waiting"}}
     url := &url.URL{RawQuery: params.Encode(), Host: hostVar, Scheme: "https", Path: transfersAPIPath}
-
+    
+    var bookedTransfers []Transfer
     response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
     if err != nil || code != http.StatusOK {
-        return Transfer{}, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
+        return bookedTransfers, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
     }
 
-    var transfersList []Transfer
-    err = mapstructure.Decode(response, &transfersList)
+    err = mapstructure.Decode(response, &bookedTransfers)
     if err != nil {
-        return Transfer{}, fmt.Errorf("error decoding response: %v", err)
+        return bookedTransfers, fmt.Errorf("error decoding response: %v", err)
     }
 
-    if len(transfersList) == 0 {
-        return Transfer{}, fmt.Errorf(ErrNoCurrentTransferFound)
+    if len(bookedTransfers) == 0 {
+        return bookedTransfers, fmt.Errorf(ErrNoCurrentTransferFound)
+    }
+    for i := range bookedTransfers {
+        quoteDetail, err := getDetailByQuoteId(bookedTransfers[i].QuoteUuid)
+        if err != nil {
+            return bookedTransfers, fmt.Errorf("getBookedTransfer: %v", err)
+        }
+        bookedTransfers[i].SourceAmount = quoteDetail.SourceAmount
+        bookedTransfers[i].Profile = quoteDetail.Profile
     }
 
-    bookedTransfer := findBestTransfer(transfersList)
-    quoteDetail, err := getDetailByQuoteId(bookedTransfer.QuoteUuid)
-    if err != nil {
-        return Transfer{}, fmt.Errorf("getBookedTransfer: %v", err)
-    }
-    bookedTransfer.SourceAmount = quoteDetail.SourceAmount
-    bookedTransfer.Profile = quoteDetail.Profile
-
-    return bookedTransfer, nil
+    return bookedTransfers, nil
 }
 
 func getLiveRate(source string, target string) (float64, error) {
@@ -330,10 +334,10 @@ func callExternalAPI(method string, url string, reqBody []byte) (response interf
     return
 }
 
-func findBestTransfer(transferList []Transfer) (bestTransfer Transfer){
-    for i := range transferList {
-        if i==0 || bestTransfer.Rate < transferList[i].Rate  {
-            bestTransfer = transferList[i]
+func findBestTransfer(bookedTransfers []Transfer) (bestTransfer Transfer){
+    for i := range bookedTransfers {
+        if i==0 || bestTransfer.Rate < bookedTransfers[i].Rate  {
+            bestTransfer = bookedTransfers[i]
         }
     }
     return
