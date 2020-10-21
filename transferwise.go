@@ -131,7 +131,7 @@ func sendExpiryReminderMail() {
 }
 
 func compareRates() (err error) {
-    bookedTransfers, err = getBookedTransfers()
+    bookedTransfers, err := getBookedTransfers()
     if err != nil || len(bookedTransfers) == 0 {
         return fmt.Errorf("compareRates: %v", err)
     }
@@ -146,10 +146,9 @@ func compareRates() (err error) {
         }
         bookedRate := bookedTransfers[i].Rate
         if liveRate > bookedRate && (liveRate - bookedRate >= marginRate) {
-            newTransfer, err := createTransfer(transfer)
-            if err != nil || !result {
-                log.Println(err)
-                return
+            newTransfer, err := createTransfer(bookedTransfers[i])
+            if err != nil {
+                return fmt.Errorf("compareRates: %v", err)
             }
             log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v | Total w/o Fees: %v ||",
                 newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount, newTransfer.Rate * newTransfer.SourceAmount)
@@ -159,6 +158,7 @@ func compareRates() (err error) {
             liveRate, bookedTransfers[i].Id, bookedTransfers[i].SourceCurrency, bookedTransfers[i].TargetCurrency, bookedTransfers[i].Rate, bookedTransfers[i].SourceAmount, bookedTransfers[i].Rate * bookedTransfers[i].SourceAmount)
         return nil
     }
+    return nil
 }
 
 func getBookedTransfers() ([]Transfer, error) {
