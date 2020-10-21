@@ -152,11 +152,9 @@ func compareRates() (err error) {
             }
             log.Printf("|| NEW TRANSFER BOOKED || Transfer ID: %v | {%v} --> {%v} | Rate: %v |  Amount: %v | Total w/o Fees: %v ||",
                 newTransfer.Id, newTransfer.SourceCurrency, newTransfer.TargetCurrency, newTransfer.Rate, newTransfer.SourceAmount, newTransfer.Rate * newTransfer.SourceAmount)
-            return nil
         }
         log.Printf("|| NO ACTION NEEDED, Live Rate: %v || Transfer ID: %v | {%v} --> {%v} | Booked Rate: %v | Amount: %v | Total w/o Fees: %v ||",
             liveRate, bookedTransfers[i].Id, bookedTransfers[i].SourceCurrency, bookedTransfers[i].TargetCurrency, bookedTransfers[i].Rate, bookedTransfers[i].SourceAmount, bookedTransfers[i].Rate * bookedTransfers[i].SourceAmount)
-        return nil
     }
     return nil
 }
