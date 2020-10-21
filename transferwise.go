@@ -167,25 +167,25 @@ func getBookedTransfers() ([]Transfer, error) {
 
     response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
     if err != nil || code != http.StatusOK {
-        return Transfer{}, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
+        return []Transfer, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
     }
 
     var bookedTransfers []Transfer
     err = mapstructure.Decode(response, &bookedTransfers)
     if err != nil {
-        return []Transfer, fmt.Errorf("error decoding response: %v", err)
+        return bookedTransfers, fmt.Errorf("error decoding response: %v", err)
     }
 
     if len(bookedTransfers) == 0 {
-        return Transfer{}, fmt.Errorf(ErrNoCurrentTransferFound)
+        return bookedTransfers, fmt.Errorf(ErrNoCurrentTransferFound)
     }
-    for i := range transferList {
-        quoteDetail, err := getDetailByQuoteId(transferList[i].QuoteUuid)
+    for i := range bookedTransfers {
+        quoteDetail, err := getDetailByQuoteId(bookedTransfers[i].QuoteUuid)
         if err != nil {
-            return []Transfer, fmt.Errorf("getBookedTransfer: %v", err)
+            return bookedTransfers, fmt.Errorf("getBookedTransfer: %v", err)
         }
-        transferList[i].SourceAmount = quoteDetail.SourceAmount
-        transferList[i].Profile = quoteDetail.Profile
+        bookedTransfers[i].SourceAmount = quoteDetail.SourceAmount
+        bookedTransfers[i].Profile = quoteDetail.Profile
         
     }
     return bookedTransfers, nil
@@ -322,10 +322,10 @@ func callExternalAPI(method string, url string, reqBody []byte) (response interf
     return
 }
 
-func findBestTransfer(transferList []Transfer) (bestTransfer Transfer){
-    for i := range transferList {
-        if i==0 || bestTransfer.Rate < transferList[i].Rate  {
-            bestTransfer = transferList[i]
+func findBestTransfer(bookedTransfers []Transfer) (bestTransfer Transfer){
+    for i := range bookedTransfers {
+        if i==0 || bestTransfer.Rate < bookedTransfers[i].Rate  {
+            bestTransfer = bookedTransfers[i]
         }
     }
     return
