@@ -97,13 +97,12 @@ func checkAndProcess() {
 
 // Send reminder mail in case the best quote is about to expire
 func sendExpiryReminderMail() {
-    empty := Transfer{}
     bookedTransfers, err := getBookedTransfers()
     if err != nil || len(bookedTransfers) == 0 {
         log.Printf("sendExpiryMail: %v", err)
     }
-    for i := range transferList {
-        quoteDetail, err := getDetailByQuoteId(transferList[i].QuoteUuid)
+    for i := range bookedTransfers {
+        quoteDetail, err := getDetailByQuoteId(bookedTransfers[i].QuoteUuid)
         if err != nil {
             log.Printf("sendExpiryMail: %v", err)
         }
@@ -115,12 +114,12 @@ func sendExpiryReminderMail() {
             body := fmt.Sprintf(
                 reminderMailBody,
                 expiryTime.Format("2006-01-02 15:04:05 UTC"),
-                transferList[i].Id,
-                transferList[i].SourceCurrency,
-                transferList[i].TargetCurrency,
-                transferList[i].Rate,
-                transferList[i].SourceCurrency,
-                transferList[i].SourceAmount,
+                bookedTransfers[i].Id,
+                bookedTransfers[i].SourceCurrency,
+                bookedTransfers[i].TargetCurrency,
+                bookedTransfers[i].Rate,
+                bookedTransfers[i].SourceCurrency,
+                bookedTransfers[i].SourceAmount,
                 )
             err := sendMail(reminderMailSubject, []byte(body))
             if err != nil {
@@ -171,13 +170,13 @@ func getBookedTransfers() ([]Transfer, error) {
         return Transfer{}, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
     }
 
-    var transfersList []Transfer
-    err = mapstructure.Decode(response, &transfersList)
+    var bookedTransfers []Transfer
+    err = mapstructure.Decode(response, &bookedTransfers)
     if err != nil {
-        return Transfer{}, fmt.Errorf("error decoding response: %v", err)
+        return []Transfer, fmt.Errorf("error decoding response: %v", err)
     }
 
-    if len(transfersList) == 0 {
+    if len(bookedTransfers) == 0 {
         return Transfer{}, fmt.Errorf(ErrNoCurrentTransferFound)
     }
     for i := range transferList {
@@ -189,7 +188,7 @@ func getBookedTransfers() ([]Transfer, error) {
         transferList[i].Profile = quoteDetail.Profile
         
     }
-    return transfersList, nil
+    return bookedTransfers, nil
 }
 
 func getLiveRate(source string, target string) (float64, error) {
