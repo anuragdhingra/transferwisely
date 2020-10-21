@@ -164,13 +164,13 @@ func compareRates() (err error) {
 func getBookedTransfers() ([]Transfer, error) {
     params := url.Values{"limit": {"3"}, "offset": {"0"}, "status": {"incoming_payment_waiting"}}
     url := &url.URL{RawQuery: params.Encode(), Host: hostVar, Scheme: "https", Path: transfersAPIPath}
-
+    
+    var bookedTransfers []Transfer
     response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
     if err != nil || code != http.StatusOK {
         return bookedTransfers, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
     }
 
-    var bookedTransfers []Transfer
     err = mapstructure.Decode(response, &bookedTransfers)
     if err != nil {
         return bookedTransfers, fmt.Errorf("error decoding response: %v", err)
