@@ -146,7 +146,6 @@ func compareRates() (err error) {
             return fmt.Errorf("compareRates: %v", err)
         }
         bookedRate := bookedTransfers[i].Rate
-        log.Printf("bookedRate: %v, liveRate: %v",bookedRate,liveRate)
         if liveRate > bookedRate && (liveRate - bookedRate >= marginRate) {
             newTransfer, err := createTransfer(bookedTransfers[i])
             if err != nil {
@@ -187,7 +186,6 @@ func getBookedTransfers() ([]Transfer, error) {
         }
         bookedTransfers[i].SourceAmount = quoteDetail.SourceAmount
         bookedTransfers[i].Profile = quoteDetail.Profile
-        log.Printf("bookedRate: %v",bookedTransfers[i].Rate)
     }
 
     return bookedTransfers, nil
