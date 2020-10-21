@@ -135,8 +135,9 @@ func compareRates() (err error) {
     if err != nil || len(bookedTransfers) == 0 {
         return fmt.Errorf("compareRates: %v", err)
     }
+    // assume all transfer currencies are the same
+    liveRate, err := getLiveRate(bookedTransfers[0].SourceCurrency, bookedTransfers[0].TargetCurrency)
     for i := range bookedTransfers {
-        liveRate, err := getLiveRate(bookedTransfers[i].SourceCurrency, bookedTransfers[i].TargetCurrency)
         if err != nil || liveRate == 0 {
             return fmt.Errorf("compareRates: %v", err)
         }
