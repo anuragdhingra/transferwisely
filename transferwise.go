@@ -187,7 +187,9 @@ func getBookedTransfers() ([]Transfer, error) {
         }
         bookedTransfers[i].SourceAmount = quoteDetail.SourceAmount
         bookedTransfers[i].Profile = quoteDetail.Profile
+        log.Printf("bookedRate: %v",bookedTransfers[i].Rate)
     }
+
     return bookedTransfers, nil
 }
 
