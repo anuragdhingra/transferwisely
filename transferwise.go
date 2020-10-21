@@ -167,7 +167,7 @@ func getBookedTransfers() ([]Transfer, error) {
 
     response, code, err := callExternalAPI(http.MethodGet, url.String(), nil)
     if err != nil || code != http.StatusOK {
-        return []Transfer, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
+        return bookedTransfers, fmt.Errorf("error GET transfer list API: %v : %v", code, err)
     }
 
     var bookedTransfers []Transfer
